@@ -1,5 +1,3 @@
-import Circle from 'ol/geom/Circle';
-import Feature from 'ol/Feature';
 import EsriJSON from 'ol/format/EsriJSON';
 import maputils from './maputils';
 import SelectedItem from './models/SelectedItem';
@@ -30,13 +28,27 @@ function createSelectedItem(feature, layer, map, groupLayers) {
   return new SelectedItem(feature, layer, map, selectionGroup, selectionGroupTitle);
 }
 
-function getFeatureInfoUrl({
+async function getFeatureInfoUrl({
   coordinate,
   resolution,
   projection
 }, layer) {
   // #region EK-specific code for FTL
   if (layer.get('infoFormat') === 'text/html') {
+    let featureJson;
+    const featUrl = layer.getSource().getFeatureInfoUrl(coordinate, resolution, projection, {
+      INFO_FORMAT: 'application/json',
+      FEATURE_COUNT: '20'
+    });
+    await fetch(featUrl, { type: 'GET' }).then((res) => {
+      if (res.error) {
+        return [];
+      }
+      return res.json();
+    }).then(json => {
+      featureJson = maputils.geojsonToFeature(json);
+    }).catch(error => console.error(error));
+
     const url = layer.getSource().getFeatureInfoUrl(coordinate, resolution, projection, {
       INFO_FORMAT: 'text/html',
       FEATURE_COUNT: '20'
@@ -87,10 +99,10 @@ function getFeatureInfoUrl({
         const head = FTL.substring(0, FTL.indexOf(`<${handleTag}`));
         const tail = FTL.substring(FTL.lastIndexOf(`</${handleTag}>`) + `</${handleTag}>`.length, FTL.length);
         const features = [];
+        let index = 0;
         while (body.indexOf(`<${handleTag}`) !== -1) {
-          const feature = new Feature({
-            geometry: new Circle(coordinate, 10)
-          });
+          const feature = featureJson[index];
+          index += 1;
           const htmlfeat = body.substring(body.indexOf(`<${handleTag}`), body.indexOf(`</${handleTag}>`) + `</${handleTag}>`.length);
           body = body.replace(htmlfeat, '');
           feature.set('textHtml', head + htmlfeat + tail);
