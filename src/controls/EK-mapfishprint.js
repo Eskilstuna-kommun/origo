@@ -607,7 +607,7 @@ const Mapfishprint = function Mapfishprint(options = {}) {
         } else if (backgroundLayer.getSource() instanceof ImageWMS) { // ----------------------------ol
           url = fetchSourceUrl(backgroundLayer);
         } else {
-          console.warn('Bakgrundslager är av okänd bildtyp');
+          console.warn('Bakgrundslager är av okänd bildtyp: ', backgroundLayer.getSource());
         }
         const backgroundLayerObject = {
           type: backgroundLayer.get('type'),
