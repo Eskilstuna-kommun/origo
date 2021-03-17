@@ -36,18 +36,20 @@ async function getFeatureInfoUrl({
   // #region EK-specific code for FTL
   if (layer.get('infoFormat') === 'text/html') {
     let featureJson;
-    const featUrl = layer.getSource().getFeatureInfoUrl(coordinate, resolution, projection, {
-      INFO_FORMAT: 'application/json',
-      FEATURE_COUNT: '20'
-    });
-    await fetch(featUrl, { type: 'GET' }).then((res) => {
-      if (res.error) {
-        return [];
-      }
-      return res.json();
-    }).then(json => {
-      featureJson = maputils.geojsonToFeature(json);
-    }).catch(error => console.error(error));
+    if (!layer.get('ArcGIS')) {
+      const featUrl = layer.getSource().getFeatureInfoUrl(coordinate, resolution, projection, {
+        INFO_FORMAT: 'application/json',
+        FEATURE_COUNT: '20'
+      });
+      await fetch(featUrl, { type: 'GET' }).then((res) => {
+        if (res.error) {
+          return [];
+        }
+        return res.json();
+      }).then(json => {
+        featureJson = maputils.geojsonToFeature(json);
+      }).catch(error => console.error(error));
+    }
 
     const url = layer.getSource().getFeatureInfoUrl(coordinate, resolution, projection, {
       INFO_FORMAT: 'text/html',
@@ -56,9 +58,10 @@ async function getFeatureInfoUrl({
 
     return fetch(url)
       .then(Resp => Resp.text())
-      .then(Html => {
+      .then(async Html => {
         let FTL = Html;
         let handleTag = layer.get('ftlseparator') || 'ul';
+        const attributeValue = [];
         if (FTL.search('http://www.esri.com/wms') !== -1) {
           handleTag = 'body';
           let returnString = '';
@@ -83,6 +86,7 @@ async function getFeatureInfoUrl({
               returnString = returnString.concat(`<th>${headers[y]}`);
               returnString = returnString.concat(`${tds[y]}</td>\n`);
               returnString = returnString.concat('</tr>\n');
+              attributeValue.push(tds[y].replace('<td>', ''));
             }
             returnString = returnString.concat(bottom);
           }
@@ -100,8 +104,21 @@ async function getFeatureInfoUrl({
         const tail = FTL.substring(FTL.lastIndexOf(`</${handleTag}>`) + `</${handleTag}>`.length, FTL.length);
         const features = [];
         let index = 0;
+        let arcGisResponse;
+
+        if (layer.get('ArcGIS')) {
+          const sourceUrl = layer.getSource().getUrls()[0].replace('arcgis/services', 'arcgis/rest/services');
+          const newUrl = `${sourceUrl.substring(0, sourceUrl.lastIndexOf('MapServer') + 9)}/${layer.get('queryId')}/query?where=${layer.get('queryAttribute')}=${attributeValue[0]}&outSR=3010&f=geojson`;
+          arcGisResponse = await fetch(newUrl).then(res => res.json());
+        }
+
         while (body.indexOf(`<${handleTag}`) !== -1) {
-          const feature = featureJson[index];
+          let feature;
+          if (layer.get('ArcGIS')) {
+            feature = maputils.geojsonToFeature(arcGisResponse)[index];
+          } else {
+            feature = featureJson[index];
+          }
           index += 1;
           const htmlfeat = body.substring(body.indexOf(`<${handleTag}`), body.indexOf(`</${handleTag}>`) + `</${handleTag}>`.length);
           body = body.replace(htmlfeat, '');
