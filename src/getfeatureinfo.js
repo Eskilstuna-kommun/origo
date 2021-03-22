@@ -1,3 +1,5 @@
+import Circle from 'ol/geom/Circle';
+import Feature from 'ol/Feature';
 import EsriJSON from 'ol/format/EsriJSON';
 import maputils from './maputils';
 import SelectedItem from './models/SelectedItem';
@@ -106,7 +108,7 @@ async function getFeatureInfoUrl({
         let index = 0;
         let arcGisResponse;
 
-        if (layer.get('ArcGIS')) {
+        if (layer.get('ArcGIS') && layer.get('queryId') && layer.get('queryAttribute')) {
           const sourceUrl = layer.getSource().getUrls()[0].replace('arcgis/services', 'arcgis/rest/services');
           const newUrl = `${sourceUrl.substring(0, sourceUrl.lastIndexOf('MapServer') + 9)}/${layer.get('queryId')}/query?where=${layer.get('queryAttribute')}=${attributeValue[0]}&outSR=3010&f=geojson`;
           arcGisResponse = await fetch(newUrl).then(res => res.json());
@@ -115,7 +117,13 @@ async function getFeatureInfoUrl({
         while (body.indexOf(`<${handleTag}`) !== -1) {
           let feature;
           if (layer.get('ArcGIS')) {
-            feature = maputils.geojsonToFeature(arcGisResponse)[index];
+            if (arcGisResponse) {
+              feature = maputils.geojsonToFeature(arcGisResponse)[index];
+            } else {
+              feature = new Feature({
+                geometry: new Circle(coordinate, 10)
+              });
+            }
           } else {
             feature = featureJson[index];
           }
