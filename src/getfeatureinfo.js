@@ -63,7 +63,7 @@ async function getFeatureInfoUrl({
       .then(async Html => {
         let FTL = Html;
         let handleTag = layer.get('ftlseparator') || 'ul';
-        const attributeValue = [];
+        const attributeValues = [];
         if (FTL.search('http://www.esri.com/wms') !== -1) {
           handleTag = 'body';
           let returnString = '';
@@ -88,7 +88,15 @@ async function getFeatureInfoUrl({
               returnString = returnString.concat(`<th>${headers[y]}`);
               returnString = returnString.concat(`${tds[y]}</td>\n`);
               returnString = returnString.concat('</tr>\n');
-              attributeValue.push(tds[y].replace('<td>', ''));
+
+              // Store attribute values to later be used for fetching geometries from ArcGIS layers.
+              if (typeof layer.get('ArcGIS') !== 'undefined') {
+                const header = headers[y].replace('</th>', '').trim();
+                const queryAttribute = layer.get('queryAttribute');
+                if (typeof queryAttribute !== 'undefined' && header === queryAttribute.trim()) {
+                  attributeValues.push(tds[y].replace('<td>', ''));
+                }
+              }
             }
             returnString = returnString.concat(bottom);
           }
@@ -106,19 +114,24 @@ async function getFeatureInfoUrl({
         const tail = FTL.substring(FTL.lastIndexOf(`</${handleTag}>`) + `</${handleTag}>`.length, FTL.length);
         const features = [];
         let index = 0;
-        let arcGisResponse;
 
-        if (layer.get('ArcGIS') && layer.get('queryId') && layer.get('queryAttribute')) {
-          const sourceUrl = layer.getSource().getUrls()[0].replace('arcgis/services', 'arcgis/rest/services');
-          const newUrl = `${sourceUrl.substring(0, sourceUrl.lastIndexOf('MapServer') + 9)}/${layer.get('queryId')}/query?where=${layer.get('queryAttribute')}=${attributeValue[0]}&outSR=3010&f=geojson`;
-          arcGisResponse = await fetch(newUrl).then(res => res.json());
-        }
+        const urls = [];
+        // Build a url string for each attribute value
+        attributeValues.forEach((value) => {
+          if (typeof layer.get('ArcGIS') !== 'undefined' && typeof layer.get('queryId') !== 'undefined' && typeof layer.get('queryAttribute') !== 'undefined') {
+            const sourceUrl = layer.getSource().getUrls()[0].replace('arcgis/services', 'arcgis/rest/services');
+            const mapserverString = sourceUrl.match(/mapserver/gi)[0];
+            const newUrl = `${sourceUrl.substring(0, sourceUrl.lastIndexOf(mapserverString) + 9)}/${layer.get('queryId')}/query?where=${layer.get('queryAttribute')}=${value}&outSR=3010&f=geojson`;
+            urls.push(newUrl);
+          }
+        });
 
         while (body.indexOf(`<${handleTag}`) !== -1) {
           let feature;
           if (layer.get('ArcGIS')) {
-            if (arcGisResponse) {
-              feature = maputils.geojsonToFeature(arcGisResponse)[index];
+            if (urls.length > 0) {
+              const resp = await fetch(urls[index]).then(res => res.json());
+              feature = maputils.geojsonToFeature(resp)[0];
             } else {
               feature = new Feature({
                 geometry: new Circle(coordinate, 10)
