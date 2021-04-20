@@ -382,6 +382,10 @@ const Viewer = function Viewer(targetOption, options = {}) {
     return urlParams;
   };
 
+  const isNotEmbedded = function isNotEmbedded() {
+    return !isEmbedded(this.getTarget());
+  };
+
   return Component({
     onInit() {
       this.render();
@@ -531,7 +535,8 @@ const Viewer = function Viewer(targetOption, options = {}) {
     removeGroup,
     removeOverlays,
     zoomToExtent,
-    getSelectionManager
+    getSelectionManager,
+    isNotEmbedded
   });
 };
 
