@@ -30,13 +30,29 @@ function createSelectedItem(feature, layer, map, groupLayers) {
   return new SelectedItem(feature, layer, map, selectionGroup, selectionGroupTitle);
 }
 
-function getFeatureInfoUrl({
+async function getFeatureInfoUrl({
   coordinate,
   resolution,
   projection
 }, layer) {
   // #region EK-specific code for FTL
   if (layer.get('infoFormat') === 'text/html') {
+    let featureJson;
+    if (!layer.get('ArcGIS')) {
+      const featUrl = layer.getSource().getFeatureInfoUrl(coordinate, resolution, projection, {
+        INFO_FORMAT: 'application/json',
+        FEATURE_COUNT: '20'
+      });
+      await fetch(featUrl, { type: 'GET' }).then((res) => {
+        if (res.error) {
+          return [];
+        }
+        return res.json();
+      }).then(json => {
+        featureJson = maputils.geojsonToFeature(json);
+      }).catch(error => console.error(error));
+    }
+
     const url = layer.getSource().getFeatureInfoUrl(coordinate, resolution, projection, {
       INFO_FORMAT: 'text/html',
       FEATURE_COUNT: '20'
@@ -44,9 +60,10 @@ function getFeatureInfoUrl({
 
     return fetch(url)
       .then(Resp => Resp.text())
-      .then(Html => {
+      .then(async Html => {
         let FTL = Html;
         let handleTag = layer.get('ftlseparator') || 'ul';
+        const attributeValues = [];
         if (FTL.search('http://www.esri.com/wms') !== -1) {
           handleTag = 'body';
           let returnString = '';
@@ -71,6 +88,15 @@ function getFeatureInfoUrl({
               returnString = returnString.concat(`<th>${headers[y]}`);
               returnString = returnString.concat(`${tds[y]}</td>\n`);
               returnString = returnString.concat('</tr>\n');
+
+              // Store attribute values to later be used for fetching geometries from ArcGIS layers.
+              if (typeof layer.get('ArcGIS') !== 'undefined') {
+                const header = headers[y].replace('</th>', '').trim();
+                const queryAttribute = layer.get('queryAttribute');
+                if (typeof queryAttribute !== 'undefined' && header === queryAttribute.trim()) {
+                  attributeValues.push(tds[y].replace('<td>', ''));
+                }
+              }
             }
             returnString = returnString.concat(bottom);
           }
@@ -87,10 +113,34 @@ function getFeatureInfoUrl({
         const head = FTL.substring(0, FTL.indexOf(`<${handleTag}`));
         const tail = FTL.substring(FTL.lastIndexOf(`</${handleTag}>`) + `</${handleTag}>`.length, FTL.length);
         const features = [];
+        let index = 0;
+
+        const urls = [];
+        // Build a url string for each attribute value
+        attributeValues.forEach((value) => {
+          if (typeof layer.get('ArcGIS') !== 'undefined' && typeof layer.get('queryId') !== 'undefined' && typeof layer.get('queryAttribute') !== 'undefined') {
+            const sourceUrl = layer.getSource().getUrls()[0].replace('arcgis/services', 'arcgis/rest/services');
+            const mapserverString = sourceUrl.match(/mapserver/gi)[0];
+            const newUrl = `${sourceUrl.substring(0, sourceUrl.lastIndexOf(mapserverString) + 9)}/${layer.get('queryId')}/query?where=${layer.get('queryAttribute')}=${value}&outSR=3010&f=geojson`;
+            urls.push(newUrl);
+          }
+        });
+
         while (body.indexOf(`<${handleTag}`) !== -1) {
-          const feature = new Feature({
-            geometry: new Circle(coordinate, 10)
-          });
+          let feature;
+          if (layer.get('ArcGIS')) {
+            if (urls.length > 0) {
+              const resp = await fetch(urls[index]).then(res => res.json());
+              feature = maputils.geojsonToFeature(resp)[0];
+            } else {
+              feature = new Feature({
+                geometry: new Circle(coordinate, 10)
+              });
+            }
+          } else {
+            feature = featureJson[index];
+          }
+          index += 1;
           const htmlfeat = body.substring(body.indexOf(`<${handleTag}`), body.indexOf(`</${handleTag}>`) + `</${handleTag}>`.length);
           body = body.replace(htmlfeat, '');
           feature.set('textHtml', head + htmlfeat + tail);
