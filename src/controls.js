@@ -24,3 +24,4 @@ export { default as Zoom } from './controls/zoom';
 export { default as Externalurl } from './controls/externalurl';
 export { default as Turnofflayers } from './controls/EK-turnofflayers';
 export { default as Scalepicker } from './controls/scalepicker';
+export { default as Notifications } from './controls/notifications';
